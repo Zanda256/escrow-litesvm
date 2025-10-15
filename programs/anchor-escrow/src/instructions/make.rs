@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::{associated_token::AssociatedToken, token_interface::{Mint, TokenAccount, TokenInterface, TransferChecked, transfer_checked}};
 
 use crate::state::Escrow;
-
+use anchor_lang::solana_program::sysvar::clock::Clock;
 #[derive(Accounts)]
 #[instruction(seed: u64)]
 pub struct Make<'info> {
@@ -37,7 +37,9 @@ pub struct Make<'info> {
 }
 
 impl<'info> Make<'info> {
-    pub fn init_escrow(&mut self, seed: u64, receive: u64, bumps: &MakeBumps) -> Result<()> {
+    pub fn init_escrow(&mut self, seed: u64, receive: u64,lock_period:u64, bumps: &MakeBumps) -> Result<()> {
+        let clock = Clock::get()?;
+        
         self.escrow.set_inner(Escrow {
             seed,
             maker: self.maker.key(),
@@ -45,6 +47,8 @@ impl<'info> Make<'info> {
             mint_b: self.mint_b.key(),
             receive,
             bump: bumps.escrow,
+            lock_period,
+            start_time:  clock.slot,
         });
 
         Ok(())

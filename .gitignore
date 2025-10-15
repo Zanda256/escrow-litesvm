@@ -1,1 +1,4 @@
 .DS_Store
+.anchor/
+node_modules/
+target/

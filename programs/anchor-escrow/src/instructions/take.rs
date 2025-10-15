@@ -1,7 +1,8 @@
 use anchor_lang::prelude::*;
 use anchor_spl::{associated_token::AssociatedToken, token_interface::{Mint, TokenAccount, TokenInterface, TransferChecked, transfer_checked, CloseAccount, close_account}};
-
+use anchor_lang::solana_program::sysvar::clock::Clock;
 use crate::state::Escrow;
+use crate::errors::*;
 
 //Create context
 #[derive(Accounts)]
@@ -58,6 +59,25 @@ pub struct Take<'info> {
 //Close vault account
 impl<'info> Take<'info> {
     pub fn deposit(&mut self) -> Result<()> {
+        let clock = Clock::get()?;
+        let current_slot = clock.slot;
+        
+        msg!("Current slot: {}", current_slot);
+        
+        let unlock_slot = self.escrow.start_time.checked_add(self.escrow.lock_period);
+        
+        require!(
+            unlock_slot.is_none(),
+            EscrowError::UnknownError
+        );
+
+        msg!("Unlock slot {}", unlock_slot.unwrap());
+
+        require!(
+            current_slot >=  unlock_slot.unwrap(),
+            EscrowError::EscrowLocked
+        );
+        
         let cpi_program = self.token_program.to_account_info();
 
         let cpi_accounts = TransferChecked {
