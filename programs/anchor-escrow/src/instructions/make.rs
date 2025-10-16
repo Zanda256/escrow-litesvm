@@ -48,7 +48,7 @@ impl<'info> Make<'info> {
             receive,
             bump: bumps.escrow,
             lock_period,
-            start_time:  clock.slot,
+            start_time:  clock.slot as u64,
         });
 
         Ok(())

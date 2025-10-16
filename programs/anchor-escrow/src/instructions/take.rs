@@ -59,22 +59,15 @@ pub struct Take<'info> {
 //Close vault account
 impl<'info> Take<'info> {
     pub fn deposit(&mut self) -> Result<()> {
-        let clock = Clock::get()?;
-        let current_slot = clock.slot;
+        let mut current_slot:u64 = 0;
+        if let Ok(v) = Clock::get() {
+            current_slot = v.slot;
+        }
         
-        msg!("Current slot: {}", current_slot);
-        
-        let unlock_slot = self.escrow.start_time.checked_add(self.escrow.lock_period);
+        let unlock_slot = self.escrow.start_time.checked_add(self.escrow.lock_period).unwrap();
         
         require!(
-            unlock_slot.is_none(),
-            EscrowError::UnknownError
-        );
-
-        msg!("Unlock slot {}", unlock_slot.unwrap());
-
-        require!(
-            current_slot >=  unlock_slot.unwrap(),
+            current_slot >=  unlock_slot,
             EscrowError::EscrowLocked
         );
         

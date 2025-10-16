@@ -58,7 +58,7 @@ mod tests {
     
         let program_data = std::fs::read(so_path).expect("Failed to read program SO file");
     
-        program.add_program(PROGRAM_ID, &program_data);
+        let _ = program.add_program(PROGRAM_ID, &program_data);
 
         // Example on how to Load an account from devnet
         // let rpc_client = RpcClient::new("https://api.devnet.solana.com");
@@ -176,6 +176,8 @@ mod tests {
         assert_eq!(escrow_data.mint_a, mint_a);
         assert_eq!(escrow_data.mint_b, mint_b);
         assert_eq!(escrow_data.receive, 10);
+        assert_eq!(escrow_data.lock_period, 10);
+        msg!("escrow_data.start_time: {}\n", escrow_data.start_time);
         
     }
 
@@ -289,9 +291,8 @@ mod tests {
         msg!("CUs Consumed: {}", tx.compute_units_consumed);
         msg!("Tx Signature: {}", tx.signature);
 
-        let vault_acc_data:Account = program.get_account(&vault).unwrap();
-        msg!("vault after refund : {:?}",vault_acc_data);
-        assert!(vault_acc_data.lamports() == 0 && vault_acc_data.data().len() == 0, "Expected vault Account not to exist after refund");
+        let vault_acc_result = program.get_account(&vault);
+        assert!(vault_acc_result.is_none(), "Expected vault Account not to exist after refund");
     }
 
     #[test]
@@ -405,15 +406,9 @@ mod tests {
         msg!("Tx Signature: {}", tx.signature);
 
 // --------------------------------------------------------------------------------------------------------------------------------
-        program.expire_blockhash();
+        // program.expire_blockhash();
         // Create the "take" instruction to test that escrow is unlocked after lock-period time elapses
-        let mut current_clock = program.get_sysvar::<Clock>();
-        msg!("Current slot: {:?}", current_clock);
-        current_clock.unix_timestamp = 1735689600;
-        &program.set_sysvar::<Clock>(&current_clock);
-        // let jump:u64 = current_slot.checked_add(100).unwrap();
-        // program.warp_to_slot(current_slot+100);
-        msg!("Current slot after warp: {:?}", current_clock);
+
 
         // let e:Account = program.get_account(&escrow).unwrap();
         // let mut data_slice: &[u8] = &e.data;
@@ -427,6 +422,13 @@ mod tests {
         //         panic!("{}",e)
         //     }
         // }
+
+        // current_clock.unix_timestamp = 1735689600;
+        // &program.set_sysvar::<Clock>(&current_clock);
+        // program.warp_to_slot(current_clock.slot.checked_add(100).unwrap());
+        program.warp_to_slot(10);
+        let current_clock = program.get_sysvar::<Clock>();
+        msg!("Current slot from tests after warp: {:?}", current_clock);
 
         let take_ix1 = Instruction {
             program_id: crate::tests::tests::PROGRAM_ID,
@@ -457,22 +459,34 @@ mod tests {
 
         // Send the transaction and capture the result
         let res1 = program.send_transaction(transaction1);
-        assert!(res1.is_ok(), "Expected take to pass after lock period elapses");
+        let mut ok = false;
+        match res1 {
+            Ok(tx) => {
+                // Log transaction details
+                msg!("\n\ntest_take transaction successful");
+                msg!("CUs Consumed: {}", tx.compute_units_consumed);
+                msg!("Tx Signature: {}", tx.signature);
+                msg!("Tx Logs: {:?}", tx.logs);
+                ok = true;
+            },
 
-        let tx = res1.unwrap();
+            Err(err) => {
+                msg!("\n\ntest_take transaction failed with {:?}", err);
+            }
+        }
 
-        // Log transaction details
-        msg!("\n\ntest_take transaction successful");
-        msg!("CUs Consumed: {}", tx.compute_units_consumed);
-        msg!("Tx Signature: {}", tx.signature);
-        msg!("Tx Logs: {:?}", tx.logs);
+        assert!(ok, "Expected take to pass after lock period elapses");
 
+        let vault_acc_result = program.get_account(&vault);
+        assert!(vault_acc_result.is_none(), "Expected vault Account not to exist after refund");
 
-        let vault_acc_data:Account = program.get_account(&vault).unwrap();
-        msg!("vault after take : {:?}",vault_acc_data);
-        assert!(vault_acc_data.lamports() == 0 && vault_acc_data.data().len() == 0, "Expected vault Account not to exist after take");
+        // Verify token transfers
+        let taker_ata_a_account = program.get_account(&taker_ata_a).unwrap();
+        let taker_ata_a_data = spl_token::state::Account::unpack(&taker_ata_a_account.data).unwrap();
+        assert_eq!(taker_ata_a_data.amount, 10, "Expected Taker Account to have 10 tokens");
     }
 
+    #[test]
     fn test_take_before_lock_period_elapses() {
 
         // Setup the test environment by initializing LiteSVM and creating a payer keypair
@@ -618,20 +632,15 @@ mod tests {
          let res = program.send_transaction(transaction);
 
          assert!(res.is_err(), "Expected take to fail before lock period elapses");
-        let  tx = res.unwrap();
-        // Log transaction details
-        msg!("\n\ntest: take_before_lock_period_elapses successful");
-        msg!("CUs Consumed: {}", tx.compute_units_consumed);
-        msg!("Tx Signature: {}", tx.signature);
-        msg!("Tx Logs: {:?}", tx.logs);
+         if let  Err(tx) = res {
+            msg!("\n\ntest: take_before_lock_period_elapses successful");
+            msg!("Test details: {:?}", tx);;
+         };
 
-
-        let vault_acc_data:Account = program.get_account(&vault).unwrap();
-        msg!("vault after take : {:?}",vault_acc_data);
-        assert!(vault_acc_data.lamports() == 0 && vault_acc_data.data().len() == 0, "Expected vault Account not to exist after take");
-
-
-
+        // Verify tokens in vault
+        let vault_acc = program.get_account(&vault).unwrap();
+        let vault_acc_data = spl_token::state::Account::unpack(&vault_acc.data).unwrap();
+        assert_eq!(vault_acc_data.amount, 10, "Expected vault Account to have 10 tokens");
 
         // --------------------------------------------------------------------------------------------------------------------------------
 
